@@ -1,0 +1,921 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bloch Sphere Explorer</title>
+<style>
+  /* ---------- Theme tokens ---------- */
+  :root {
+    --bg: #ffffff;
+    --card: #f7f8fa;
+    --border: #dde1e7;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #3b5bdb;
+    --before: #e03131;
+    --after: #9c36b5;
+    --xy: #1971c2;
+    --xz: #2f9e44;
+    --yz: #e8590c;
+    --zb: #5f3dc4;
+    --xb: #c2255c;
+    --yb: #0c8599;
+    --mono: "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    padding: 8px;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px; color: var(--text); background: var(--bg);
+  }
+  #app { display: flex; flex-direction: column; gap: 8px; max-width: 1600px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  .gh { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  .hint { color: var(--muted); font-size: 13px; }
+
+  /* ---------- Row 1: controls ---------- */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: flex-start; }
+  .ctrl-group.state { flex: 0 1 370px; }
+  .ctrl-group.gate { flex: 0 1 430px; }
+  .ctrl-group.matrix { flex: 1 1 360px; }
+  .row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .row label { width: 16px; font-weight: 600; font-size: 16px; }
+  .row input[type=range] { flex: 1; min-width: 80px; margin: 0; }
+  .row input[type=number] { width: 72px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; }
+  .unit { color: var(--muted); width: 74px; font-size: 13px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+  button {
+    font: inherit; padding: 2px 7px; border: 1px solid var(--border); border-radius: 5px;
+    background: #fff; cursor: pointer; color: var(--text);
+  }
+  button:hover { border-color: var(--accent); }
+  button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .disabled { opacity: .4; pointer-events: none; }
+  .chk { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
+
+  /* ---------- Matrix display ---------- */
+  .mat-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  .mat {
+    display: inline-table; border-collapse: separate; border-spacing: 0;
+    border-left: 2px solid var(--text); border-right: 2px solid var(--text); border-radius: 6px; padding: 1px;
+  }
+  .mat td { padding: 1px 7px; text-align: center; white-space: nowrap; font-family: var(--mono); font-size: 14px; }
+  .mat-name { font-weight: 600; white-space: nowrap; font-size: 15px; }
+
+  /* ---------- Row 2: 2D plots (before / after) ---------- */
+  .planes { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; }
+  .rowlab {
+    writing-mode: vertical-rl; transform: rotate(180deg); text-align: center;
+    font-size: 13px; font-weight: 700; letter-spacing: .08em; border-radius: 4px; color: #fff;
+  }
+  .rowlab.before { background: var(--before); }
+  .rowlab.after { background: var(--after); }
+  .prow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px 5px; min-width: 0; }
+  .panel .title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pbody { display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; }
+  .panel canvas { width: clamp(80px, calc(100% - 106px), 116px); aspect-ratio: 1 / 1; display: block; flex: none; touch-action: none; }
+  .panel canvas.drag { cursor: crosshair; }
+  .panel .info { flex: 1 1 98px; font-family: var(--mono); font-size: 13px; line-height: 1.35; white-space: nowrap; }
+  .tag { display: inline-block; padding: 0 4px; border-radius: 3px; font-size: 11.5px; margin-top: 2px; }
+  .tag.solid { background: #d3f9d8; color: #2b8a3e; }
+  .tag.proj { background: #fff3bf; color: #a35f00; }
+
+  /* ---------- Row 3: 3D spheres + read-outs ---------- */
+  .spheres { display: flex; flex-wrap: wrap; gap: 8px; }
+  .sph { flex: 1 1 480px; display: flex; gap: 10px; align-items: center; min-width: 0; }
+  canvas.sphere { width: 236px; height: 236px; flex: none; display: block; cursor: grab; touch-action: none; }
+  canvas.sphere:active { cursor: grabbing; }
+  .readout { flex: 1; min-width: 0; font-family: var(--mono); font-size: 15px; line-height: 1.42; white-space: nowrap; overflow-x: auto; }
+  .readout .hd { font-family: -apple-system, "Segoe UI", sans-serif; font-size: 17px; font-weight: 700; }
+  .readout .big { font-size: 16px; font-weight: 600; }
+  .before .hd { color: var(--before); }
+  .after .hd { color: var(--after); }
+
+  @media (max-width: 1250px) { .panel .info { font-size: 11.5px; flex-basis: 84px; } .readout { font-size: 13px; } .panel canvas { width: clamp(72px, calc(100% - 86px), 116px); } }
+  @media (max-width: 900px) { .prow { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <section class="controls card">
+    <div class="ctrl-group state">
+      <div class="gh">Input state |ψ⟩</div>
+      <div class="row">
+        <label>θ</label>
+        <input type="range" id="thetaR" min="0" max="180" step="0.1">
+        <input type="number" id="thetaN" min="0" max="180" step="0.1">
+        <span class="unit" id="thetaRad"></span>
+      </div>
+      <div class="row">
+        <label>φ</label>
+        <input type="range" id="phiR" min="0" max="360" step="0.1">
+        <input type="number" id="phiN" min="0" max="360" step="0.1">
+        <span class="unit" id="phiRad"></span>
+      </div>
+      <div class="btns" id="presets"></div>
+    </div>
+
+    <div class="ctrl-group gate">
+      <div class="gh">Gate U</div>
+      <div class="btns" id="gateBtns"></div>
+      <div class="row" id="angRow">
+        <label>θ</label>
+        <input type="range" id="angR" min="-360" max="360" step="0.5">
+        <input type="number" id="angN" step="0.5">
+        <span class="unit" id="angRad"></span>
+      </div>
+      <label class="chk"><input type="checkbox" id="linkViews" checked> link 3D views (drag to rotate, double-click to reset)</label>
+    </div>
+
+    <div class="ctrl-group matrix">
+      <div class="gh" id="matTitle">Matrix</div>
+      <div id="matrix"></div>
+    </div>
+  </section>
+
+  <section class="planes card">
+    <div class="rowlab before">BEFORE · DRAG</div>
+    <div class="prow" id="gridB"></div>
+    <div class="rowlab after">AFTER</div>
+    <div class="prow" id="gridA"></div>
+  </section>
+
+  <section class="spheres">
+    <div class="sph card before">
+      <canvas class="sphere" id="sphB"></canvas>
+      <div class="readout" id="roB"></div>
+    </div>
+    <div class="sph card after">
+      <canvas class="sphere" id="sphA"></canvas>
+      <div class="readout" id="roA"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+
+/* =====================================================================
+   Complex-number helpers (a complex number is {re, im})
+   ===================================================================== */
+const DEG = Math.PI / 180;
+const TAU = 2 * Math.PI;
+const C = (re, im = 0) => ({ re, im });
+const cadd = (a, b) => C(a.re + b.re, a.im + b.im);
+const cmul = (a, b) => C(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re);
+const cscale = (a, s) => C(a.re * s, a.im * s);
+const cconj = (a) => C(a.re, -a.im);
+const cabs = (a) => Math.hypot(a.re, a.im);
+const carg = (a) => Math.atan2(a.im, a.re);
+const cexpi = (t) => C(Math.cos(t), Math.sin(t));          // e^{i t}
+const mod = (x, m) => ((x % m) + m) % m;
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+/* ---------- Number formatting for display ---------- */
+function fmt(x, d = 3) {
+  if (Math.abs(x) < 0.5 * Math.pow(10, -d)) x = 0;          // avoid "-0.000"
+  return x.toFixed(d).replace("-", "−");
+}
+function fmtC(z, d = 3) {
+  const eps = 0.5 * Math.pow(10, -d);
+  const re = Math.abs(z.re) < eps ? 0 : z.re;
+  const im = Math.abs(z.im) < eps ? 0 : z.im;
+  if (im === 0) return fmt(re, d);
+  if (re === 0) return fmt(im, d) + "i";
+  return fmt(re, d) + (im < 0 ? " − " : " + ") + Math.abs(im).toFixed(d) + "i";
+}
+const fmtDeg = (r, d = 1) => fmt(r / DEG, d) + "°";
+const fmtVec = (v, d = 3) => "(" + v.map((c) => fmt(c, d)).join(", ") + ")";
+
+/* =====================================================================
+   Single-qubit math
+   ===================================================================== */
+// |ψ⟩ = cos(θ/2)|0⟩ + e^{iφ} sin(θ/2)|1⟩
+function stateFromAngles(theta, phi) {
+  return [C(Math.cos(theta / 2)), cscale(cexpi(phi), Math.sin(theta / 2))];
+}
+
+// Bloch vector from amplitudes: x = 2Re(a*b), y = 2Im(a*b), z = |a|² − |b|²
+function blochFromState(psi) {
+  const ab = cmul(cconj(psi[0]), psi[1]);
+  const a2 = cabs(psi[0]) ** 2, b2 = cabs(psi[1]) ** 2;
+  const n = a2 + b2;
+  return [2 * ab.re / n, 2 * ab.im / n, (a2 - b2) / n];
+}
+
+// (θ, φ) from amplitudes; global phase is discarded. φ is undefined at the poles,
+// so we keep a fallback value there to avoid jumps.
+function anglesFromState(psi, fallbackPhi) {
+  const a = cabs(psi[0]), b = cabs(psi[1]);
+  const n = Math.hypot(a, b);
+  const theta = 2 * Math.atan2(b, a);
+  const atPole = a / n < 1e-9 || b / n < 1e-9;
+  const phi = atPole ? fallbackPhi : mod(carg(psi[1]) - carg(psi[0]), TAU);
+  return { theta, phi, atPole };
+}
+
+// (θ, φ) from a Bloch vector
+function anglesFromBloch(v, fallbackPhi) {
+  const r = Math.hypot(v[0], v[1], v[2]) || 1;
+  const theta = Math.acos(clamp(v[2] / r, -1, 1));
+  const phi = Math.hypot(v[0], v[1]) / r < 1e-9 ? fallbackPhi : mod(Math.atan2(v[1], v[0]), TAU);
+  return { theta, phi };
+}
+
+// U|ψ⟩ for a 2×2 complex matrix U
+function applyU(U, psi) {
+  return [
+    cadd(cmul(U[0][0], psi[0]), cmul(U[0][1], psi[1])),
+    cadd(cmul(U[1][0], psi[0]), cmul(U[1][1], psi[1])),
+  ];
+}
+
+// Rodrigues rotation of a 3D vector v around unit axis n by angle a
+function rotate(v, n, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  const dot = n[0] * v[0] + n[1] * v[1] + n[2] * v[2];
+  const cr = [n[1] * v[2] - n[2] * v[1], n[2] * v[0] - n[0] * v[2], n[0] * v[1] - n[1] * v[0]];
+  return [0, 1, 2].map((i) => v[i] * c + cr[i] * s + n[i] * dot * (1 - c));
+}
+
+/* =====================================================================
+   Gate definitions
+   Every single-qubit gate is (up to a global phase) a rotation of the Bloch
+   sphere around an axis n by an angle; that is stored for visualisation.
+   ===================================================================== */
+const S2 = Math.SQRT1_2;
+const GATES = {
+  X: {
+    label: "X", name: "Pauli X", param: false, axis: [1, 0, 0], angle: () => Math.PI,
+    sym: [["0", "1"], ["1", "0"]],
+    mat: () => [[C(0), C(1)], [C(1), C(0)]],
+  },
+  Y: {
+    label: "Y", name: "Pauli Y", param: false, axis: [0, 1, 0], angle: () => Math.PI,
+    sym: [["0", "−i"], ["i", "0"]],
+    mat: () => [[C(0), C(0, -1)], [C(0, 1), C(0)]],
+  },
+  Z: {
+    label: "Z", name: "Pauli Z", param: false, axis: [0, 0, 1], angle: () => Math.PI,
+    sym: [["1", "0"], ["0", "−1"]],
+    mat: () => [[C(1), C(0)], [C(0), C(-1)]],
+  },
+  H: {
+    label: "H", name: "Hadamard", param: false, axis: [S2, 0, S2], angle: () => Math.PI,
+    prefix: "1/√2 ·", sym: [["1", "1"], ["1", "−1"]],
+    mat: () => [[C(S2), C(S2)], [C(S2), C(-S2)]],
+  },
+  S: {
+    label: "S", name: "Phase S", param: false, axis: [0, 0, 1], angle: () => Math.PI / 2,
+    sym: [["1", "0"], ["0", "i"]],
+    mat: () => [[C(1), C(0)], [C(0), C(0, 1)]],
+  },
+  T: {
+    label: "T", name: "T (π/8)", param: false, axis: [0, 0, 1], angle: () => Math.PI / 4,
+    sym: [["1", "0"], ["0", "e<sup>iπ/4</sup>"]],
+    mat: () => [[C(1), C(0)], [C(0), cexpi(Math.PI / 4)]],
+  },
+  Rx: {
+    label: "Rx(θ)", name: "Rotation X", param: true, axis: [1, 0, 0], angle: (t) => t,
+    sym: [["cos(θ/2)", "−i·sin(θ/2)"], ["−i·sin(θ/2)", "cos(θ/2)"]],
+    mat: (t) => [[C(Math.cos(t / 2)), C(0, -Math.sin(t / 2))], [C(0, -Math.sin(t / 2)), C(Math.cos(t / 2))]],
+  },
+  Ry: {
+    label: "Ry(θ)", name: "Rotation Y", param: true, axis: [0, 1, 0], angle: (t) => t,
+    sym: [["cos(θ/2)", "−sin(θ/2)"], ["sin(θ/2)", "cos(θ/2)"]],
+    mat: (t) => [[C(Math.cos(t / 2)), C(-Math.sin(t / 2))], [C(Math.sin(t / 2)), C(Math.cos(t / 2))]],
+  },
+  Rz: {
+    label: "Rz(θ)", name: "Rotation Z", param: true, axis: [0, 0, 1], angle: (t) => t,
+    sym: [["e<sup>−iθ/2</sup>", "0"], ["0", "e<sup>iθ/2</sup>"]],
+    mat: (t) => [[cexpi(-t / 2), C(0)], [C(0), cexpi(t / 2)]],
+  },
+};
+
+/* =====================================================================
+   Orthonormal bases used by the 2D "state vector" plots
+   ===================================================================== */
+const BASES = {
+  Z: { kets: [[C(1), C(0)], [C(0), C(1)]], labels: ["|0⟩", "|1⟩"], color: "--zb", title: "Z basis |0⟩, |1⟩" },
+  X: { kets: [[C(S2), C(S2)], [C(S2), C(-S2)]], labels: ["|+⟩", "|−⟩"], color: "--xb", title: "X basis |+⟩, |−⟩" },
+  Y: { kets: [[C(S2), C(0, S2)], [C(S2), C(0, -S2)]], labels: ["|+i⟩", "|−i⟩"], color: "--yb", title: "Y basis |+i⟩, |−i⟩" },
+};
+
+// ⟨k|ψ⟩
+const inner = (k, psi) => cadd(cmul(cconj(k[0]), psi[0]), cmul(cconj(k[1]), psi[1]));
+
+// Coefficients of |ψ⟩ in a basis, with the global phase fixed so that c0 is real and ≥ 0
+function coeffsInBasis(B, psi) {
+  let c0 = inner(B.kets[0], psi), c1 = inner(B.kets[1], psi);
+  const m0 = cabs(c0);
+  if (m0 > 1e-9) {
+    const ph = cscale(cconj(c0), 1 / m0);                    // e^{-i arg c0}
+    c0 = cmul(c0, ph); c1 = cmul(c1, ph);
+  } else {
+    c0 = C(0); c1 = C(cabs(c1));
+  }
+  return { c0, c1 };
+}
+
+// |ψ⟩ = c0|b0⟩ + c1|b1⟩ expressed in the computational basis
+function stateFromBasisCoeffs(B, c0, c1) {
+  return [0, 1].map((i) => cadd(cmul(c0, B.kets[0][i]), cmul(c1, B.kets[1][i])));
+}
+
+/* =====================================================================
+   Plane-section definitions: h/v = in-plane axes, p = perpendicular axis
+   ===================================================================== */
+const PLANES = {
+  xz: { h: 0, v: 2, p: 1, color: "--xz", title: "x–z section (x→, z↑)", hl: ["|+⟩", "|−⟩"], vl: ["|0⟩", "|1⟩"], pName: "y" },
+  xy: { h: 0, v: 1, p: 2, color: "--xy", title: "x–y section (x→, y↑)", hl: ["|+⟩", "|−⟩"], vl: ["|+i⟩", "|−i⟩"], pName: "z" },
+  yz: { h: 1, v: 2, p: 0, color: "--yz", title: "y–z section (y→, z↑)", hl: ["|+i⟩", "|−i⟩"], vl: ["|0⟩", "|1⟩"], pName: "x" },
+};
+const AXIS_NAMES = ["x", "y", "z"];
+
+/* =====================================================================
+   Application state
+   ===================================================================== */
+const state = {
+  theta: 60 * DEG,
+  phi: 60 * DEG,
+  gate: "H",
+  ang: 90 * DEG,        // parameter θ of Rx/Ry/Rz (radians)
+};
+const DEFAULT_VIEW = { az: 30 * DEG, el: 20 * DEG };
+const views = { B: { ...DEFAULT_VIEW }, A: { ...DEFAULT_VIEW } };
+let derived = null;     // everything computed from `state`, refreshed by compute()
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const $ = (id) => document.getElementById(id);
+
+function compute() {
+  const g = GATES[state.gate];
+  const psiB = stateFromAngles(state.theta, state.phi);
+  const vB = blochFromState(psiB);
+  const U = g.mat(state.ang);
+  const psiA = applyU(U, psiB);
+  const angA = anglesFromState(psiA, 0);
+  const vA = blochFromState(psiA);
+  // Global phase picked up by U|ψ⟩ (arg of the first non-zero amplitude)
+  const gp = cabs(psiA[0]) > 1e-9 ? carg(psiA[0]) : carg(psiA[1]);
+  const axis = g.axis, rotAngle = g.angle(state.ang);
+  // Trajectory of the Bloch vector while the rotation is applied continuously
+  const traj = [];
+  const steps = Math.max(24, Math.ceil(Math.abs(rotAngle) / (3 * DEG)));
+  for (let i = 0; i <= steps; i++) traj.push(rotate(vB, axis, rotAngle * i / steps));
+  derived = {
+    g, U, psiB, vB, psiA, vA, gp, axis, rotAngle, traj,
+    B: { theta: state.theta, phi: state.phi, psi: psiB, v: vB, atPole: vB[2] > 1 - 1e-9 || vB[2] < -1 + 1e-9 },
+    A: { theta: angA.theta, phi: angA.phi, psi: psiA, v: vA, atPole: angA.atPole },
+  };
+}
+
+/* =====================================================================
+   Canvas utilities
+   ===================================================================== */
+function fitCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth || 200;
+  cv._size = w;
+  const px = Math.round(w * dpr);
+  if (cv.width !== px) { cv.width = px; cv.height = px; }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return ctx;
+}
+
+function arrowHead(ctx, x0, y0, x1, y1, size, color) {
+  const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy);
+  if (L < 2) return;
+  const ux = dx / L, uy = dy / L;
+  const s = Math.min(size, L * 0.6);
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - ux * s - uy * s * 0.45, y1 - uy * s + ux * s * 0.45);
+  ctx.lineTo(x1 - ux * s + uy * s * 0.45, y1 - uy * s - ux * s * 0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function withAlpha(hex, a) {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+/* =====================================================================
+   3D Bloch sphere renderer (orthographic projection, mouse-rotatable)
+   ===================================================================== */
+function makeProjector(view, cx, cy, R) {
+  const ca = Math.cos(view.az), sa = Math.sin(view.az);
+  const ce = Math.cos(view.el), se = Math.sin(view.el);
+  return (p) => {
+    const sx = -p[0] * sa + p[1] * ca;           // screen right
+    const d0 = p[0] * ca + p[1] * sa;            // towards viewer (before tilt)
+    const sy = p[2] * ce - d0 * se;              // screen up
+    const depth = d0 * ce + p[2] * se;           // > 0 means front hemisphere
+    return { x: cx + R * sx, y: cy - R * sy, d: depth };
+  };
+}
+
+// Draw a 3D polyline; pass = "back" draws only hidden segments, "front" only visible ones
+function drawCurve3D(ctx, P, pts, color, width, pass, opts = {}) {
+  const proj = pts.map(P);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  for (let i = 0; i < proj.length - 1; i++) {
+    const a = proj[i], b = proj[i + 1];
+    const isBack = (a.d + b.d) / 2 < 0;
+    if ((pass === "back") !== isBack) continue;
+    ctx.globalAlpha = isBack ? (opts.backAlpha ?? 0.35) : (opts.frontAlpha ?? 1);
+    ctx.setLineDash(isBack ? [3, 4] : (opts.dash || []));
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+}
+
+const circlePts = (f, n = 120, t0 = 0, t1 = TAU) => {
+  const pts = [];
+  for (let i = 0; i <= n; i++) pts.push(f(t0 + (t1 - t0) * i / n));
+  return pts;
+};
+const linePts = (a, b, n = 24) => {
+  const pts = [];
+  for (let i = 0; i <= n; i++) { const t = i / n; pts.push([0, 1, 2].map((k) => a[k] + (b[k] - a[k]) * t)); }
+  return pts;
+};
+
+function drawSphere(cv, view, which) {
+  const ctx = fitCanvas(cv);
+  const S = cv._size, cx = S / 2, cy = S / 2, R = S * 0.36;
+  const P = makeProjector(view, cx, cy, R);
+  const D = derived, side = D[which];
+  const stateColor = css(which === "B" ? "--before" : "--after");
+  ctx.clearRect(0, 0, S, S);
+
+  // Static geometry: grid (latitudes / longitudes), three great circles, axes
+  const grid = [];
+  for (const z of [-0.5, 0.5]) {
+    const r = Math.sqrt(1 - z * z);
+    grid.push(circlePts((t) => [r * Math.cos(t), r * Math.sin(t), z]));
+  }
+  for (let k = 0; k < 6; k++) {
+    const p = k * Math.PI / 6;
+    if (k === 0 || k === 3) continue;                   // these are the x–z / y–z great circles
+    grid.push(circlePts((t) => [Math.sin(t) * Math.cos(p), Math.sin(t) * Math.sin(p), Math.cos(t)]));
+  }
+  const great = [
+    { pts: circlePts((t) => [Math.cos(t), Math.sin(t), 0]), color: css("--xy") },
+    { pts: circlePts((t) => [Math.cos(t), 0, Math.sin(t)]), color: css("--xz") },
+    { pts: circlePts((t) => [0, Math.cos(t), Math.sin(t)]), color: css("--yz") },
+  ];
+  const axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((e) => linePts(e.map((c) => -1.25 * c), e.map((c) => 1.25 * c)));
+
+  // Pass 1: hidden (back) parts
+  grid.forEach((g) => drawCurve3D(ctx, P, g, "#adb5bd", 0.8, "back", { backAlpha: 0.25 }));
+  great.forEach((g) => drawCurve3D(ctx, P, g.pts, g.color, 1.4, "back", { backAlpha: 0.45 }));
+  axes.forEach((a) => drawCurve3D(ctx, P, a, "#495057", 1, "back", { backAlpha: 0.4 }));
+
+  // Translucent shaded sphere body
+  const grad = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.4, R * 0.1, cx, cy, R);
+  grad.addColorStop(0, "rgba(255,255,255,0.75)");
+  grad.addColorStop(1, "rgba(165,180,205,0.45)");
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
+  ctx.strokeStyle = "#868e96"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
+
+  // Pass 2: visible (front) parts
+  grid.forEach((g) => drawCurve3D(ctx, P, g, "#adb5bd", 0.8, "front", { frontAlpha: 0.7 }));
+  great.forEach((g) => drawCurve3D(ctx, P, g.pts, g.color, 1.6, "front"));
+  axes.forEach((a) => drawCurve3D(ctx, P, a, "#495057", 1.2, "front"));
+
+  // Axis labels with the corresponding basis states
+  const labels = [
+    [[1.42, 0, 0], "x |+⟩"], [[-1.38, 0, 0], "|−⟩"],
+    [[0, 1.42, 0], "y |+i⟩"], [[0, -1.38, 0], "|−i⟩"],
+    [[0, 0, 1.36], "z |0⟩"], [[0, 0, -1.36], "|1⟩"],
+  ];
+  ctx.font = "600 13px -apple-system, Segoe UI, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const [p, txt] of labels) {
+    const q = P(p);
+    ctx.fillStyle = q.d < -0.2 ? "rgba(52,58,64,0.45)" : "#343a40";
+    ctx.fillText(txt, q.x, q.y);
+  }
+
+  const O = P([0, 0, 0]);
+  const v = side.v;
+
+  if (which === "A") {
+    // Rotation axis of the gate
+    const n = D.axis;
+    drawCurve3D(ctx, P, linePts(n.map((c) => -1.3 * c), n.map((c) => 1.3 * c)), "#212529", 1.6, "back", { backAlpha: 0.5 });
+    drawCurve3D(ctx, P, linePts(n.map((c) => -1.3 * c), n.map((c) => 1.3 * c)), "#212529", 1.6, "front", { dash: [8, 4] });
+    const nt = P(n.map((c) => 1.3 * c));
+    ctx.fillStyle = "#212529"; ctx.font = "italic 600 14px -apple-system, Segoe UI, sans-serif";
+    ctx.fillText("n", nt.x + 10, nt.y - 8);
+
+    // Ghost of the input state
+    const g = P(D.vB);
+    ctx.strokeStyle = withAlpha(css("--before"), 0.55); ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(g.x, g.y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = withAlpha(css("--before"), 0.55);
+    ctx.beginPath(); ctx.arc(g.x, g.y, 3.5, 0, TAU); ctx.fill();
+
+    // Trajectory of the rotation (before → after)
+    const tp = D.traj.map(P);
+    ctx.strokeStyle = withAlpha(css("--after"), 0.8); ctx.lineWidth = 2; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); tp.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke();
+    ctx.setLineDash([]);
+    if (tp.length > 2) {
+      const a = tp[tp.length - 3], b = tp[tp.length - 1];
+      arrowHead(ctx, a.x, a.y, b.x, b.y, 9, withAlpha(css("--after"), 0.8));
+    }
+  }
+
+  // Projection of the state onto the x–y plane (dashed) + θ / φ arcs
+  const foot = P([v[0], v[1], 0]);
+  const T = P(v);
+  ctx.strokeStyle = withAlpha(stateColor, 0.7); ctx.lineWidth = 1.2; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(foot.x, foot.y); ctx.lineTo(T.x, T.y); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const th = side.theta, ph = side.phi;
+  const rArc = 0.32;
+  const thetaArc = circlePts((t) => [rArc * Math.sin(t) * Math.cos(ph), rArc * Math.sin(t) * Math.sin(ph), rArc * Math.cos(t)], 40, 0, th).map(P);
+  const phiArc = circlePts((t) => [rArc * 0.85 * Math.cos(t), rArc * 0.85 * Math.sin(t), 0], 40, 0, ph).map(P);
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = "#f59f00";
+  ctx.beginPath(); thetaArc.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke();
+  ctx.strokeStyle = "#1098ad";
+  if (!side.atPole) { ctx.beginPath(); phiArc.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); }
+  ctx.font = "italic 700 16px Georgia, serif";
+  const tl = P([0.45 * Math.sin(th / 2) * Math.cos(ph), 0.45 * Math.sin(th / 2) * Math.sin(ph), 0.45 * Math.cos(th / 2)]);
+  ctx.fillStyle = "#e67700"; ctx.fillText("θ", tl.x, tl.y);
+  if (!side.atPole) {
+    const pl = P([0.42 * Math.cos(ph / 2), 0.42 * Math.sin(ph / 2), 0]);
+    ctx.fillStyle = "#0b7285"; ctx.fillText("φ", pl.x, pl.y);
+  }
+
+  // State vector
+  ctx.strokeStyle = stateColor; ctx.lineWidth = 3.2;
+  ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(T.x, T.y); ctx.stroke();
+  arrowHead(ctx, O.x, O.y, T.x, T.y, 10, stateColor);
+  ctx.fillStyle = stateColor;
+  ctx.beginPath(); ctx.arc(T.x, T.y, 4, 0, TAU); ctx.fill();
+  ctx.fillStyle = "#212529"; ctx.beginPath(); ctx.arc(O.x, O.y, 2.5, 0, TAU); ctx.fill();
+
+  // Corner caption with θ and φ
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.font = "600 15px -apple-system, Segoe UI, sans-serif";
+  ctx.fillStyle = stateColor;
+  const tName = which === "B" ? "θ" : "θ'", pName = which === "B" ? "φ" : "φ'";
+  ctx.fillText(`${tName} = ${fmtDeg(th)}`, 2, 2);
+  ctx.fillText(`${pName} = ${side.atPole ? "undefined" : fmtDeg(ph)}`, 2, 20);
+}
+
+/* =====================================================================
+   2D panels: plane sections and basis-state plots
+   ===================================================================== */
+const panels = { B: [], A: [] };
+const PANEL_SPECS = [
+  { kind: "plane", key: "xz" }, { kind: "plane", key: "xy" }, { kind: "plane", key: "yz" },
+  { kind: "basis", key: "Z" }, { kind: "basis", key: "X" }, { kind: "basis", key: "Y" },
+];
+const SNAP = 0.04;      // drag snapping tolerance onto the unit circle
+
+function buildPanels(which, draggable) {
+  const grid = $(which === "B" ? "gridB" : "gridA");
+  for (const spec of PANEL_SPECS) {
+    const def = spec.kind === "plane" ? PLANES[spec.key] : BASES[spec.key];
+    const div = document.createElement("div");
+    div.className = "panel";
+    div.innerHTML = `<div class="title" style="color:${css(def.color)}">${def.title}</div><div class="pbody"><canvas></canvas><div class="info"></div></div>`;
+    grid.appendChild(div);
+    const panel = { spec, def, which, cv: div.querySelector("canvas"), info: div.querySelector(".info"), draggable };
+    panels[which].push(panel);
+    if (draggable) attachPanelDrag(panel);
+  }
+}
+
+// Data shown in a panel: the 2D point (u, v), whether it is exact (solid) or a projection (dashed)
+function panelData(panel) {
+  const side = derived[panel.which];
+  if (panel.spec.kind === "plane") {
+    const pl = panel.def;
+    const u = side.v[pl.h], v = side.v[pl.v], w = side.v[pl.p];
+    return { u, v, w, solid: Math.abs(w) < 1e-3 };
+  }
+  const { c0, c1 } = coeffsInBasis(panel.def, side.psi);
+  return { u: c0.re, v: c1.re, c0, c1, solid: Math.abs(c1.im) < 1e-3 };
+}
+
+function drawPanel(panel) {
+  const ctx = fitCanvas(panel.cv);
+  const S = panel.cv._size, cx = S / 2, cy = S / 2, R = S * 0.36;
+  const col = css(panel.def.color);
+  const stateColor = css(panel.which === "B" ? "--before" : "--after");
+  const d = panelData(panel);
+  const isBasis = panel.spec.kind === "basis";
+  ctx.clearRect(0, 0, S, S);
+
+  // Half-plane c0 < 0 is unreachable once the global phase is fixed (c0 real ≥ 0)
+  if (isBasis) {
+    ctx.fillStyle = "rgba(134,142,150,0.10)";
+    ctx.fillRect(0, 0, cx, S);
+  }
+
+  // Light grid
+  ctx.strokeStyle = "#e9ecef"; ctx.lineWidth = 1;
+  for (const g of [-1, -0.5, 0.5, 1]) {
+    ctx.beginPath(); ctx.moveTo(cx + g * R, cy - 1.25 * R); ctx.lineTo(cx + g * R, cy + 1.25 * R); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 1.25 * R, cy - g * R); ctx.lineTo(cx + 1.25 * R, cy - g * R); ctx.stroke();
+  }
+
+  // Unit circle
+  ctx.fillStyle = withAlpha(col, 0.06);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill(); ctx.stroke();
+
+  // Axes with arrows
+  ctx.strokeStyle = "#495057"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - 1.3 * R, cy); ctx.lineTo(cx + 1.3 * R, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy + 1.3 * R); ctx.lineTo(cx, cy - 1.3 * R); ctx.stroke();
+  arrowHead(ctx, cx, cy, cx + 1.33 * R, cy, 6, "#495057");
+  arrowHead(ctx, cx, cy, cx, cy - 1.33 * R, 6, "#495057");
+
+  // Axis labels
+  const fs = Math.max(11, Math.min(13, S / 9));
+  ctx.font = `600 ${fs}px -apple-system, Segoe UI, sans-serif`;
+  ctx.fillStyle = "#343a40";
+  const hl = isBasis ? [panel.def.labels[0], ""] : panel.def.hl;
+  const vl = isBasis ? [panel.def.labels[1], ""] : panel.def.vl;
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText(hl[0], S - 3, cy - 3);
+  ctx.textAlign = "left"; ctx.fillText(hl[1], 3, cy - 3);
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(vl[0], cx + 5, 2);
+  ctx.textBaseline = "bottom"; ctx.fillText(vl[1], cx + 5, S - 2);
+
+  // State (solid if exactly representable in this 2D picture, otherwise dashed projection)
+  const px = cx + R * d.u, py = cy - R * d.v;
+  ctx.strokeStyle = withAlpha(stateColor, 0.45); ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, cy); ctx.moveTo(px, py); ctx.lineTo(cx, py); ctx.stroke();
+
+  ctx.strokeStyle = stateColor; ctx.lineWidth = d.solid ? 2.6 : 2.2;
+  ctx.setLineDash(d.solid ? [] : [6, 4]);
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+  ctx.setLineDash([]);
+  arrowHead(ctx, cx, cy, px, py, 8, stateColor);
+
+  // Drag handle
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = stateColor;
+  ctx.fillStyle = d.solid ? stateColor : "#fff";
+  ctx.beginPath(); ctx.arc(px, py, panel.draggable ? 4.5 : 3, 0, TAU); ctx.fill(); ctx.stroke();
+
+  panel.info.innerHTML = panelInfo(panel, d);
+}
+
+// Complex number split over two short lines so it fits the narrow side column
+function fmtC2(z) {
+  const re = fmt(z.re), im = Math.abs(z.im) < 5e-4 ? 0 : z.im;
+  return im === 0 ? re : `${re}<br>&nbsp;&nbsp;&nbsp;${im < 0 ? "−" : "+"}${Math.abs(im).toFixed(3)}i`;
+}
+
+function panelInfo(panel, d) {
+  if (panel.spec.kind === "plane") {
+    const pl = panel.def;
+    const tag = d.solid ? `<span class="tag solid">in plane</span>` : `<span class="tag proj">projection</span>`;
+    return `${AXIS_NAMES[pl.h]}&nbsp; ${fmt(d.u)}<br>${AXIS_NAMES[pl.v]}&nbsp; ${fmt(d.v)}<br>`
+         + `⊥${pl.pName} ${fmt(d.w)}<br>${tag}`;
+  }
+  const L = panel.def.labels.map((k) => "⟨" + k.slice(1, -1) + "|");
+  const rel = cabs(d.c1) > 1e-9 && cabs(d.c0) > 1e-9 ? fmtDeg(carg(d.c1), 1) : "—";
+  const tag = d.solid ? `<span class="tag solid">real</span>` : `<span class="tag proj">Re proj.</span>`;
+  return `${L[0]} ${fmt(d.c0.re)}<br>${L[1]} ${fmtC2(d.c1)}<br>`
+       + `P ${fmt(cabs(d.c0) ** 2, 2)}|${fmt(cabs(d.c1) ** 2, 2)}<br>Δφ ${rel}<br>${tag}`;
+}
+
+/* ---------- Dragging the state inside a "before" panel ---------- */
+function attachPanelDrag(panel) {
+  const cv = panel.cv;
+  cv.classList.add("drag");
+  let sign = 1;     // sign of the hidden component, frozen at drag start
+
+  const toPlane = (e) => {
+    const r = cv.getBoundingClientRect();
+    const S = cv._size, R = S * 0.36;
+    return [(e.clientX - r.left - S / 2) / R, -(e.clientY - r.top - S / 2) / R];
+  };
+
+  const applyDrag = (e) => {
+    let [u, v] = toPlane(e);
+    if (panel.spec.kind === "plane") {
+      // In-plane coordinates follow the mouse; the perpendicular component fills up to |r| = 1
+      const pl = panel.def;
+      const r = Math.hypot(u, v);
+      let w = 0;
+      if (r >= 1 - SNAP) { u /= r; v /= r; }
+      else w = sign * Math.sqrt(1 - r * r);
+      const vec = [0, 0, 0];
+      vec[pl.h] = u; vec[pl.v] = v; vec[pl.p] = w;
+      const a = anglesFromBloch(vec, state.phi);
+      state.theta = a.theta; state.phi = a.phi;
+    } else {
+      // Mouse gives (c0, Re c1); the imaginary part of c1 restores normalisation
+      u = Math.max(0, u);
+      const r = Math.hypot(u, v);
+      let im = 0;
+      if (r >= 1 - SNAP || r === 0) { const s = r || 1; u /= s; v /= s; if (r === 0) u = 1; }
+      else im = sign * Math.sqrt(1 - r * r);
+      const psi = stateFromBasisCoeffs(panel.def, C(u), C(v, im));
+      const a = anglesFromState(psi, state.phi);
+      state.theta = a.theta; state.phi = a.phi;
+    }
+    scheduleRender();
+  };
+
+  cv.addEventListener("pointerdown", (e) => {
+    const d = panelData(panel);
+    sign = panel.spec.kind === "plane" ? (d.w < -1e-6 ? -1 : 1) : (d.c1.im < -1e-6 ? -1 : 1);
+    cv.setPointerCapture(e.pointerId);
+    applyDrag(e);
+  });
+  cv.addEventListener("pointermove", (e) => { if (cv.hasPointerCapture(e.pointerId)) applyDrag(e); });
+}
+
+/* =====================================================================
+   Read-outs and matrix display
+   ===================================================================== */
+function matTable(cells) {
+  return `<table class="mat">${cells.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</table>`;
+}
+
+function renderMatrix() {
+  const D = derived, g = D.g;
+  const name = g.param ? g.label.replace("θ", fmt(state.ang / DEG, 1) + "°") : g.label;
+  const num = D.U.map((r) => r.map((z) => fmtC(z, 3)));
+  $("matTitle").textContent = `Matrix · ${g.name} gate`;
+  $("matrix").innerHTML =
+    `<div class="mat-line"><span class="mat-name">${g.label} =</span>${g.prefix ? `<span>${g.prefix}</span>` : ""}${matTable(g.sym)}`
+    + `<span class="mat-name">${g.param ? `&nbsp;&nbsp;${name} =` : "="}</span>${matTable(num)}</div>`
+    + `<div class="hint">Bloch rotation: axis n = ${fmtVec(D.axis)}, angle ${fmtDeg(D.rotAngle)}</div>`;
+}
+
+function renderReadouts() {
+  const D = derived, b = D.B, a = D.A;
+  const pad = "&nbsp;".repeat(7);
+  $("roB").innerHTML =
+    `<div class="hd">Before: |ψ⟩</div>`
+    + `<span class="big">θ = ${fmtDeg(b.theta)}</span> (${fmt(b.theta)} rad)<br>`
+    + `<span class="big">φ = ${fmtDeg(b.phi)}</span> (${fmt(b.phi)} rad)<br>`
+    + `<span class="hint">|ψ⟩ = cos(θ/2)|0⟩ + e<sup>iφ</sup>sin(θ/2)|1⟩</span><br>`
+    + `|ψ⟩ = ${fmtC(b.psi[0])} |0⟩<br>${pad}+ (${fmtC(b.psi[1])}) |1⟩<br>`
+    + `r = ${fmtVec(b.v)}<br>`
+    + `P(0) = ${fmt(cabs(b.psi[0]) ** 2)}&nbsp; P(1) = ${fmt(cabs(b.psi[1]) ** 2)}`;
+  const psiN = stateFromAngles(a.theta, a.phi);
+  $("roA").innerHTML =
+    `<div class="hd">After: U|ψ⟩</div>`
+    + `<span class="big">θ' = ${fmtDeg(a.theta)}</span> (${fmt(a.theta)} rad)<br>`
+    + `<span class="big">φ' = ${a.atPole ? "undefined" : fmtDeg(a.phi)}</span> ${a.atPole ? "(pole)" : `(${fmt(a.phi)} rad)`}<br>`
+    + `U|ψ⟩ = (${fmtC(a.psi[0])}) |0⟩<br>${pad}+ (${fmtC(a.psi[1])}) |1⟩<br>`
+    + `${pad}= e<sup>i·${fmtDeg(D.gp)}</sup> [ ${fmtC(psiN[0])} |0⟩<br>${pad}&nbsp;&nbsp;+ (${fmtC(psiN[1])}) |1⟩ ]<br>`
+    + `r' = ${fmtVec(a.v)}<br>`
+    + `P(0) = ${fmt(cabs(a.psi[0]) ** 2)}&nbsp; P(1) = ${fmt(cabs(a.psi[1]) ** 2)}`;
+}
+
+/* =====================================================================
+   Controls
+   ===================================================================== */
+const PRESETS = [
+  ["|0⟩", 0, 0], ["|1⟩", 180, 0], ["|+⟩", 90, 0], ["|−⟩", 90, 180], ["|+i⟩", 90, 90], ["|−i⟩", 90, 270],
+];
+
+function syncInputs() {
+  // Write state back to sliders / number boxes, except the box the user is typing in
+  const set = (el, val) => { if (document.activeElement !== el) el.value = val; };
+  const t = state.theta / DEG, p = state.phi / DEG, g = state.ang / DEG;
+  set($("thetaR"), t.toFixed(1)); set($("thetaN"), +t.toFixed(2));
+  set($("phiR"), p.toFixed(1)); set($("phiN"), +p.toFixed(2));
+  set($("angR"), clamp(g, -360, 360)); set($("angN"), +g.toFixed(2));
+  $("thetaRad").textContent = fmt(state.theta) + " rad";
+  $("phiRad").textContent = fmt(state.phi) + " rad";
+  $("angRad").textContent = fmt(state.ang) + " rad";
+  $("angRow").classList.toggle("disabled", !GATES[state.gate].param);
+  document.querySelectorAll("#gateBtns button").forEach((b) => b.classList.toggle("active", b.dataset.g === state.gate));
+}
+
+function buildControls() {
+  const pre = $("presets");
+  for (const [lab, t, p] of PRESETS) {
+    const b = document.createElement("button");
+    b.textContent = lab;
+    b.onclick = () => { state.theta = t * DEG; state.phi = p * DEG; scheduleRender(); };
+    pre.appendChild(b);
+  }
+  const gb = $("gateBtns");
+  for (const k of Object.keys(GATES)) {
+    const b = document.createElement("button");
+    b.textContent = GATES[k].label;
+    b.dataset.g = k;
+    b.onclick = () => { state.gate = k; scheduleRender(); };
+    gb.appendChild(b);
+  }
+
+  // Sliders and number boxes update the state live on every "input" event
+  const bind = (rangeId, numId, setter, normalise) => {
+    $(rangeId).addEventListener("input", (e) => { setter(parseFloat(e.target.value)); scheduleRender(); });
+    $(numId).addEventListener("input", (e) => {
+      const x = parseFloat(e.target.value);
+      if (Number.isFinite(x)) { setter(x); scheduleRender(); }
+    });
+    $(numId).addEventListener("change", (e) => {
+      const x = parseFloat(e.target.value);
+      if (Number.isFinite(x)) setter(normalise(x));
+      e.target.blur();
+      scheduleRender();
+    });
+  };
+  bind("thetaR", "thetaN", (x) => { state.theta = clamp(x, 0, 180) * DEG; }, (x) => clamp(x, 0, 180));
+  bind("phiR", "phiN", (x) => { state.phi = mod(x, 360) * DEG; }, (x) => mod(x, 360));
+  bind("angR", "angN", (x) => { state.ang = x * DEG; }, (x) => x);
+
+  // Mouse rotation of the 3D spheres
+  for (const [id, key] of [["sphB", "B"], ["sphA", "A"]]) {
+    const cv = $(id);
+    let last = null;
+    cv.addEventListener("pointerdown", (e) => { last = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener("pointermove", (e) => {
+      if (!last || !cv.hasPointerCapture(e.pointerId)) return;
+      const dx = e.clientX - last[0], dy = e.clientY - last[1];
+      last = [e.clientX, e.clientY];
+      const v = views[key];
+      v.az -= dx * 0.01;
+      v.el = clamp(v.el + dy * 0.01, -89 * DEG, 89 * DEG);
+      if ($("linkViews").checked) Object.assign(views[key === "B" ? "A" : "B"], v);
+      scheduleRender();
+    });
+    cv.addEventListener("pointerup", () => { last = null; });
+    cv.addEventListener("dblclick", () => {
+      Object.assign(views[key], DEFAULT_VIEW);
+      if ($("linkViews").checked) Object.assign(views[key === "B" ? "A" : "B"], DEFAULT_VIEW);
+      scheduleRender();
+    });
+  }
+  $("linkViews").addEventListener("change", (e) => {
+    if (e.target.checked) { Object.assign(views.A, views.B); scheduleRender(); }
+  });
+}
+
+/* =====================================================================
+   Render loop (coalesced with requestAnimationFrame for smooth dragging)
+   ===================================================================== */
+let pending = false;
+function scheduleRender() {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; render(); });
+}
+
+function render() {
+  compute();
+  syncInputs();
+  drawSphere($("sphB"), views.B, "B");
+  drawSphere($("sphA"), views.A, "A");
+  panels.B.forEach(drawPanel);
+  panels.A.forEach(drawPanel);
+  renderMatrix();
+  renderReadouts();
+  fitFrame();
+}
+
+// When embedded in a notebook iframe, grow the iframe to fit the content
+function fitFrame() {
+  try {
+    const fe = window.frameElement;
+    if (fe) {
+      const h = Math.ceil($("app").getBoundingClientRect().height) + 20;
+      if (Math.abs(parseFloat(fe.style.height || 0) - h) > 2) fe.style.height = h + "px";
+    }
+  } catch (err) { /* cross-origin parent: ignore */ }
+}
+
+buildControls();
+buildPanels("B", true);
+buildPanels("A", false);
+window.addEventListener("resize", scheduleRender);
+render();
+</script>
+</body>
+</html>
