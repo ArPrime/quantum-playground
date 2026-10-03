@@ -53,7 +53,6 @@
   button:hover { border-color: var(--accent); }
   button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .disabled { opacity: .4; pointer-events: none; }
-  .chk { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 13px; }
 
   /* ---------- Matrix display ---------- */
   .mat-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
@@ -127,7 +126,6 @@
         <input type="number" id="angN" step="0.5">
         <span class="unit" id="angRad"></span>
       </div>
-      <label class="chk"><input type="checkbox" id="linkViews" checked> link 3D views (drag to rotate, double-click to reset)</label>
     </div>
 
     <div class="ctrl-group matrix">
@@ -347,8 +345,7 @@ const state = {
   gate: "H",
   ang: 90 * DEG,        // parameter θ of Rx/Ry/Rz (radians)
 };
-const DEFAULT_VIEW = { az: 30 * DEG, el: 20 * DEG };
-const views = { B: { ...DEFAULT_VIEW }, A: { ...DEFAULT_VIEW } };
+const VIEW = { az: 30 * DEG, el: 20 * DEG };   // camera shared by both 3D spheres
 let derived = null;     // everything computed from `state`, refreshed by compute()
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -849,31 +846,20 @@ function buildControls() {
   bind("phiR", "phiN", (x) => { state.phi = mod(x, 360) * DEG; }, (x) => mod(x, 360));
   bind("angR", "angN", (x) => { state.ang = x * DEG; }, (x) => x);
 
-  // Mouse rotation of the 3D spheres
-  for (const [id, key] of [["sphB", "B"], ["sphA", "A"]]) {
-    const cv = $(id);
+  // Mouse rotation of the 3D spheres (both share one view, so they turn together)
+  for (const cv of [$("sphB"), $("sphA")]) {
     let last = null;
     cv.addEventListener("pointerdown", (e) => { last = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); });
     cv.addEventListener("pointermove", (e) => {
       if (!last || !cv.hasPointerCapture(e.pointerId)) return;
       const dx = e.clientX - last[0], dy = e.clientY - last[1];
       last = [e.clientX, e.clientY];
-      const v = views[key];
-      v.az -= dx * 0.01;
-      v.el = clamp(v.el + dy * 0.01, -89 * DEG, 89 * DEG);
-      if ($("linkViews").checked) Object.assign(views[key === "B" ? "A" : "B"], v);
+      VIEW.az -= dx * 0.01;
+      VIEW.el = clamp(VIEW.el + dy * 0.01, -89 * DEG, 89 * DEG);
       scheduleRender();
     });
     cv.addEventListener("pointerup", () => { last = null; });
-    cv.addEventListener("dblclick", () => {
-      Object.assign(views[key], DEFAULT_VIEW);
-      if ($("linkViews").checked) Object.assign(views[key === "B" ? "A" : "B"], DEFAULT_VIEW);
-      scheduleRender();
-    });
   }
-  $("linkViews").addEventListener("change", (e) => {
-    if (e.target.checked) { Object.assign(views.A, views.B); scheduleRender(); }
-  });
 }
 
 /* =====================================================================
@@ -889,8 +875,8 @@ function scheduleRender() {
 function render() {
   compute();
   syncInputs();
-  drawSphere($("sphB"), views.B, "B");
-  drawSphere($("sphA"), views.A, "A");
+  drawSphere($("sphB"), VIEW, "B");
+  drawSphere($("sphA"), VIEW, "A");
   panels.B.forEach(drawPanel);
   panels.A.forEach(drawPanel);
   renderMatrix();
