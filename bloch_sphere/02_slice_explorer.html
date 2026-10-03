@@ -23,6 +23,7 @@
     --yb: #0c8599;
     --al: #364fc7;
     --be: #087f5b;
+    --gp: #e67700;
     --mono: "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
@@ -69,9 +70,9 @@
   .sides { display: flex; flex-wrap: wrap; gap: 8px; }
   .side { flex: 1 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .prow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .prow.amp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px 5px; min-width: 0; }
   .panel .title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #ampB .title, #ampA .title { white-space: normal; }
   .pbody { display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; }
   .panel canvas { width: clamp(80px, calc(100% - 106px), 116px); aspect-ratio: 1 / 1; display: block; flex: none; touch-action: none; }
   .panel canvas.drag { cursor: crosshair; }
@@ -132,7 +133,7 @@
 
   <section class="sides">
     <div class="side card before">
-      <div class="prow amp" id="ampB"></div>
+      <div class="prow" id="ampB"></div>
       <div class="prow" id="rawB"></div>
       <div class="prow" id="gridB"></div>
       <div class="sph">
@@ -141,7 +142,7 @@
       </div>
     </div>
     <div class="side card after">
-      <div class="prow amp" id="ampA"></div>
+      <div class="prow" id="ampA"></div>
       <div class="prow" id="rawA"></div>
       <div class="prow" id="gridA"></div>
       <div class="sph">
@@ -338,6 +339,11 @@ const AMPS = [
     return `${s} = ${a.bra}${which === "A" ? "U" : ""}ψ⟩ = ${s}<sub>R</sub> + i${s}<sub>I</sub>`;
   },
 }));
+// Global-phase dial: the unit-circle factor e^{iγ} in front of the standard form
+const GPHASE = {
+  color: "--gp",
+  title: (which) => which === "A" ? "global phase e<sup>iγ'</sup>" : "global phase e<sup>iγ</sup>",
+};
 
 /* =====================================================================
    Plane-section definitions: h/v = in-plane axes, p = perpendicular axis
@@ -600,16 +606,16 @@ const PANEL_SPECS = [
   { kind: "basis", key: "Z" }, { kind: "basis", key: "X" }, { kind: "basis", key: "Y" },
   { kind: "plane", key: "xy" }, { kind: "plane", key: "yz" }, { kind: "plane", key: "xz" },
 ];
-const AMP_SPECS = [{ kind: "amp", key: 0 }, { kind: "amp", key: 1 }];
+const AMP_SPECS = [{ kind: "amp", key: 0 }, { kind: "amp", key: 1 }, { kind: "gphase" }];
 // Second row: the same three bases, but the raw coefficients ⟨b₀|ψ⟩, ⟨b₁|ψ⟩ before the global phase is removed
 const RAW_SPECS = [{ kind: "raw", key: "Z" }, { kind: "raw", key: "X" }, { kind: "raw", key: "Y" }];
 const SNAP = 0.04;      // drag snapping tolerance onto the unit circle
 
 function buildPanels(which, draggable) {
   for (const spec of [...AMP_SPECS, ...RAW_SPECS, ...PANEL_SPECS]) {
-    const def = spec.kind === "amp" ? AMPS[spec.key] : spec.kind === "plane" ? PLANES[spec.key] : BASES[spec.key];
-    const grid = $((spec.kind === "amp" || spec.kind === "raw" ? spec.kind : "grid") + which);
-    const title = spec.kind === "amp" ? def.title(which) : spec.kind === "raw" ? `${spec.key} basis, raw` : def.title;
+    const def = spec.kind === "gphase" ? GPHASE : spec.kind === "amp" ? AMPS[spec.key] : spec.kind === "plane" ? PLANES[spec.key] : BASES[spec.key];
+    const grid = $((spec.kind === "gphase" ? "amp" : spec.kind === "amp" || spec.kind === "raw" ? spec.kind : "grid") + which);
+    const title = typeof def.title === "function" ? def.title(which) : spec.kind === "raw" ? `${spec.key} basis, raw` : def.title;
     const div = document.createElement("div");
     div.className = "panel";
     div.innerHTML = `<div class="title" style="color:${css(def.color)}">${title}</div><div class="pbody"><canvas></canvas><div class="info"></div></div>`;
@@ -638,6 +644,74 @@ function drawAxes(ctx, cx, cy, R) {
   ctx.beginPath(); ctx.moveTo(cx, cy + 1.3 * R); ctx.lineTo(cx, cy - 1.3 * R); ctx.stroke();
   arrowHead(ctx, cx, cy, cx + 1.33 * R, cy, 6, "#495057");
   arrowHead(ctx, cx, cy, cx, cy - 1.33 * R, 6, "#495057");
+}
+
+// Global phase of a side: input γ is stored in state; output γ' = arg of U|ψ⟩'s standard-form prefactor
+const sideGamma = (which) => which === "A" ? mod(derived.gp, TAU) : state.gamma;
+
+// Global-phase dial: e^{iγ} on the unit circle. Turning it rotates α and β together; no other plot changes.
+function drawGPhasePanel(panel) {
+  const ctx = fitCanvas(panel.cv);
+  const S = panel.cv._size, cx = S / 2, cy = S / 2, R = S * 0.36;
+  const col = css(panel.def.color);
+  const stateColor = css(panel.which === "B" ? "--before" : "--after");
+  const g = sideGamma(panel.which);
+  ctx.clearRect(0, 0, S, S);
+
+  ctx.fillStyle = withAlpha(col, 0.06);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill(); ctx.stroke();
+  // Tick marks every 45°
+  ctx.strokeStyle = withAlpha(col, 0.6); ctx.lineWidth = 1;
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4;
+    ctx.beginPath();
+    ctx.moveTo(cx + R * 0.9 * Math.cos(a), cy - R * 0.9 * Math.sin(a));
+    ctx.lineTo(cx + R * Math.cos(a), cy - R * Math.sin(a));
+    ctx.stroke();
+  }
+  drawAxes(ctx, cx, cy, R);
+
+  const fs = Math.max(11, Math.min(13, S / 9));
+  ctx.font = `600 ${fs}px -apple-system, Segoe UI, sans-serif`;
+  ctx.fillStyle = "#343a40";
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText("Re", S - 3, cy - 3);
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("Im", cx + 5, 2);
+
+  // Output side: ghost of the input γ, and the arc of the phase U adds
+  if (panel.which === "A") {
+    const gi = state.gamma, gx = cx + R * Math.cos(gi), gy = cy - R * Math.sin(gi);
+    ctx.strokeStyle = withAlpha(css("--before"), 0.55); ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(gx, gy); ctx.stroke(); ctx.setLineDash([]);
+    const d = mod(g - gi + Math.PI, TAU) - Math.PI;
+    ctx.strokeStyle = withAlpha(css("--after"), 0.8); ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.55, -gi, -(gi + d), d > 0); ctx.stroke();
+  }
+
+  // Arc γ from +Re
+  ctx.strokeStyle = col; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.arc(cx, cy, R * 0.3, 0, -g, true); ctx.stroke();
+  ctx.font = `italic 700 ${fs + 1}px Georgia, serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = col;
+  const lr = R * 0.3 + fs * 0.75;
+  ctx.fillText("γ", cx + lr * Math.cos(g / 2), cy - lr * Math.sin(g / 2));
+
+  const px = cx + R * Math.cos(g), py = cy - R * Math.sin(g);
+  ctx.strokeStyle = stateColor; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+  arrowHead(ctx, cx, cy, px, py, 8, stateColor);
+  ctx.lineWidth = 2; ctx.fillStyle = stateColor;
+  ctx.beginPath(); ctx.arc(px, py, 4.5, 0, TAU); ctx.fill(); ctx.stroke();
+
+  const z = cexpi(g);
+  if (panel.which === "A") {
+    const d = mod(g - state.gamma + Math.PI, TAU) - Math.PI;
+    panel.info.innerHTML = `γ' ${fmtDeg(g)}<br>e<sup>iγ'</sup> ${fmtC2(z)}<br>γ&nbsp; ${fmtDeg(state.gamma)}<br>`
+      + `<span style="color:${css("--after")}">U adds</span><br>&nbsp;&nbsp;${fmtDeg(d)}`;
+  } else {
+    panel.info.innerHTML = `γ ${fmtDeg(g)}<br>e<sup>iγ</sup> ${fmtC2(z)}<br>`
+      + `<span class="hint">unobservable</span>`;
+  }
 }
 
 // Complex plane of one amplitude: the point is (Re, Im); |amplitude| ≤ 1 keeps it in the unit disc
@@ -743,6 +817,7 @@ function drawRawPanel(panel) {
 }
 
 function drawPanel(panel) {
+  if (panel.spec.kind === "gphase") return drawGPhasePanel(panel);
   if (panel.spec.kind === "amp") return drawAmpPanel(panel);
   if (panel.spec.kind === "raw") return drawRawPanel(panel);
   const ctx = fitCanvas(panel.cv);
@@ -869,7 +944,11 @@ function attachPanelDrag(panel) {
 
   const applyDrag = (e) => {
     let [u, v] = toPlane(e);
-    if (panel.spec.kind === "amp") {
+    if (panel.spec.kind === "gphase") {
+      // Only the global phase changes; on the output side shift γ by the same amount γ' moves
+      const a = Math.atan2(v, u);
+      state.gamma = mod(panel.which === "A" ? state.gamma + a - derived.gp : a, TAU);
+    } else if (panel.spec.kind === "amp") {
       // Mouse sets this amplitude; the other keeps its phase and its modulus restores normalisation
       const side = derived[panel.which], k = panel.spec.key, o = 1 - k;
       const r = Math.hypot(u, v);
@@ -922,8 +1001,9 @@ function attachPanelDrag(panel) {
       const [u, v] = toPlane(e), c = rawCoeffs(panel);
       grab = Math.hypot(u - c[1].re, v - c[1].im) < Math.hypot(u - c[0].re, v - c[0].im) ? 1 : 0;
     }
-    const d = panel.spec.kind === "raw" || panel.spec.kind === "amp" ? {} : panelData(panel);
-    sign = panel.spec.kind === "raw" || panel.spec.kind === "amp" ? 1 : panel.spec.kind === "plane" ? (d.w < -1e-6 ? -1 : 1) : (d.c1.im < -1e-6 ? -1 : 1);
+    const noSign = ["raw", "amp", "gphase"].includes(panel.spec.kind);
+    const d = noSign ? {} : panelData(panel);
+    sign = noSign ? 1 : panel.spec.kind === "plane" ? (d.w < -1e-6 ? -1 : 1) : (d.c1.im < -1e-6 ? -1 : 1);
     cv.setPointerCapture(e.pointerId);
     applyDrag(e);
   });
