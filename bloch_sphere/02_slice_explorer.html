@@ -21,6 +21,8 @@
     --zb: #5f3dc4;
     --xb: #c2255c;
     --yb: #0c8599;
+    --al: #364fc7;
+    --be: #087f5b;
     --mono: "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
@@ -67,6 +69,7 @@
   .sides { display: flex; flex-wrap: wrap; gap: 8px; }
   .side { flex: 1 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .prow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .prow.amp { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px 5px; min-width: 0; }
   .panel .title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pbody { display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; }
@@ -129,6 +132,8 @@
 
   <section class="sides">
     <div class="side card before">
+      <div class="prow amp" id="ampB"></div>
+      <div class="prow" id="rawB"></div>
       <div class="prow" id="gridB"></div>
       <div class="sph">
         <canvas class="sphere" id="sphB"></canvas>
@@ -136,6 +141,8 @@
       </div>
     </div>
     <div class="side card after">
+      <div class="prow amp" id="ampA"></div>
+      <div class="prow" id="rawA"></div>
       <div class="prow" id="gridA"></div>
       <div class="sph">
         <canvas class="sphere" id="sphA"></canvas>
@@ -319,6 +326,20 @@ function stateFromBasisCoeffs(B, c0, c1) {
 }
 
 /* =====================================================================
+   Complex planes of the amplitudes α = ⟨0|ψ⟩ and β = ⟨1|ψ⟩
+   ===================================================================== */
+const AMPS = [
+  { sym: "α", bra: "⟨0|", color: "--al" },
+  { sym: "β", bra: "⟨1|", color: "--be" },
+].map((a) => ({
+  ...a,
+  title: (which) => {
+    const s = a.sym + (which === "A" ? "'" : "");
+    return `${s} = ${a.bra}${which === "A" ? "U" : ""}ψ⟩ = ${s}<sub>R</sub> + i${s}<sub>I</sub>`;
+  },
+}));
+
+/* =====================================================================
    Plane-section definitions: h/v = in-plane axes, p = perpendicular axis
    ===================================================================== */
 const PLANES = {
@@ -336,6 +357,7 @@ const state = {
   phi: 60 * DEG,
   gate: "H",
   ang: 90 * DEG,        // parameter θ of Rx/Ry/Rz (radians)
+  gamma: 0,             // global phase γ of the input: |ψ⟩ = e^{iγ}[cos(θ/2)|0⟩ + e^{iφ}sin(θ/2)|1⟩]
 };
 const VIEW = { az: 30 * DEG, el: 20 * DEG };   // camera shared by both 3D spheres
 let derived = null;     // everything computed from `state`, refreshed by compute()
@@ -345,7 +367,7 @@ const $ = (id) => document.getElementById(id);
 
 function compute() {
   const g = GATES[state.gate];
-  const psiB = stateFromAngles(state.theta, state.phi);
+  const psiB = stateFromAngles(state.theta, state.phi).map((z) => cmul(z, cexpi(state.gamma)));
   const vB = blochFromState(psiB);
   const U = g.mat(state.ang);
   const psiA = applyU(U, psiB);
@@ -578,15 +600,19 @@ const PANEL_SPECS = [
   { kind: "basis", key: "Z" }, { kind: "basis", key: "X" }, { kind: "basis", key: "Y" },
   { kind: "plane", key: "xy" }, { kind: "plane", key: "yz" }, { kind: "plane", key: "xz" },
 ];
+const AMP_SPECS = [{ kind: "amp", key: 0 }, { kind: "amp", key: 1 }];
+// Second row: the same three bases, but the raw coefficients ⟨b₀|ψ⟩, ⟨b₁|ψ⟩ before the global phase is removed
+const RAW_SPECS = [{ kind: "raw", key: "Z" }, { kind: "raw", key: "X" }, { kind: "raw", key: "Y" }];
 const SNAP = 0.04;      // drag snapping tolerance onto the unit circle
 
 function buildPanels(which, draggable) {
-  const grid = $(which === "B" ? "gridB" : "gridA");
-  for (const spec of PANEL_SPECS) {
-    const def = spec.kind === "plane" ? PLANES[spec.key] : BASES[spec.key];
+  for (const spec of [...AMP_SPECS, ...RAW_SPECS, ...PANEL_SPECS]) {
+    const def = spec.kind === "amp" ? AMPS[spec.key] : spec.kind === "plane" ? PLANES[spec.key] : BASES[spec.key];
+    const grid = $((spec.kind === "amp" || spec.kind === "raw" ? spec.kind : "grid") + which);
+    const title = spec.kind === "amp" ? def.title(which) : spec.kind === "raw" ? `${spec.key} basis, raw` : def.title;
     const div = document.createElement("div");
     div.className = "panel";
-    div.innerHTML = `<div class="title" style="color:${css(def.color)}">${def.title}</div><div class="pbody"><canvas></canvas><div class="info"></div></div>`;
+    div.innerHTML = `<div class="title" style="color:${css(def.color)}">${title}</div><div class="pbody"><canvas></canvas><div class="info"></div></div>`;
     grid.appendChild(div);
     const panel = { spec, def, which, cv: div.querySelector("canvas"), info: div.querySelector(".info"), draggable };
     panels[which].push(panel);
@@ -606,7 +632,119 @@ function panelData(panel) {
   return { u: c0.re, v: c1.re, c0, c1, solid: Math.abs(c1.im) < 1e-3 };
 }
 
+function drawAxes(ctx, cx, cy, R) {
+  ctx.strokeStyle = "#495057"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - 1.3 * R, cy); ctx.lineTo(cx + 1.3 * R, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy + 1.3 * R); ctx.lineTo(cx, cy - 1.3 * R); ctx.stroke();
+  arrowHead(ctx, cx, cy, cx + 1.33 * R, cy, 6, "#495057");
+  arrowHead(ctx, cx, cy, cx, cy - 1.33 * R, 6, "#495057");
+}
+
+// Complex plane of one amplitude: the point is (Re, Im); |amplitude| ≤ 1 keeps it in the unit disc
+function drawAmpPanel(panel) {
+  const ctx = fitCanvas(panel.cv);
+  const S = panel.cv._size, cx = S / 2, cy = S / 2, R = S * 0.36;
+  const col = css(panel.def.color);
+  const stateColor = css(panel.which === "B" ? "--before" : "--after");
+  const z = derived[panel.which].psi[panel.spec.key];
+  const m = cabs(z);
+  ctx.clearRect(0, 0, S, S);
+
+  ctx.fillStyle = withAlpha(col, 0.06);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill(); ctx.stroke();
+  // Circle of the current modulus: dragging along it changes only the phase
+  if (m > 1e-3 && m < 1 - 1e-3) {
+    ctx.strokeStyle = withAlpha(col, 0.5); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(cx, cy, R * m, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  }
+  drawAxes(ctx, cx, cy, R);
+
+  const fs = Math.max(11, Math.min(13, S / 9));
+  ctx.font = `600 ${fs}px -apple-system, Segoe UI, sans-serif`;
+  ctx.fillStyle = "#343a40";
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText("Re", S - 3, cy - 3);
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("Im", cx + 5, 2);
+
+  // Phase arc arg(z), measured from +Re
+  if (m > 1e-6) {
+    const a = carg(z), r = R * 0.3;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, -a, a > 0); ctx.stroke();
+  }
+
+  const px = cx + R * z.re, py = cy - R * z.im;
+  ctx.strokeStyle = withAlpha(stateColor, 0.45); ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, cy); ctx.moveTo(px, py); ctx.lineTo(cx, py); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = stateColor; ctx.lineWidth = 2.6;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+  arrowHead(ctx, cx, cy, px, py, 8, stateColor);
+  ctx.lineWidth = 2; ctx.fillStyle = stateColor;
+  ctx.beginPath(); ctx.arc(px, py, panel.draggable ? 4.5 : 3, 0, TAU); ctx.fill(); ctx.stroke();
+
+  const s = panel.def.sym + (panel.which === "A" ? "'" : "");
+  panel.info.innerHTML = `${s}<sub>R</sub> ${fmt(z.re)}<br>${s}<sub>I</sub> ${fmt(z.im)}<br>`
+    + `|${s}|&nbsp; ${fmt(m)}<br>arg ${m > 1e-6 ? fmtDeg(carg(z)) : "—"}<br>|${s}|² ${fmt(m * m)}`;
+}
+
+// Raw coefficients in one basis, both drawn in a single complex plane.
+// Turning both arrows by the same angle is a global phase; the plot below removes it by turning c0 onto +Re.
+const rawCoeffs = (panel) => panel.def.kets.map((k) => inner(k, derived[panel.which].psi));
+
+function drawRawPanel(panel) {
+  const ctx = fitCanvas(panel.cv);
+  const S = panel.cv._size, cx = S / 2, cy = S / 2, R = S * 0.36;
+  const col = css(panel.def.color);
+  const stateColor = css(panel.which === "B" ? "--before" : "--after");
+  const c = rawCoeffs(panel);
+  ctx.clearRect(0, 0, S, S);
+
+  ctx.fillStyle = withAlpha(col, 0.06);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill(); ctx.stroke();
+  drawAxes(ctx, cx, cy, R);
+
+  const fs = Math.max(11, Math.min(13, S / 9));
+  ctx.font = `600 ${fs}px -apple-system, Segoe UI, sans-serif`;
+  ctx.fillStyle = "#343a40";
+  ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText("Re", S - 3, cy - 3);
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("Im", cx + 5, 2);
+
+  // Phase of c0 = the global phase that the plot below removes
+  if (cabs(c[0]) > 1e-6) {
+    const a = carg(c[0]);
+    ctx.strokeStyle = "#f59f00"; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.28, 0, -a, a > 0); ctx.stroke();
+  }
+
+  const tags = panel.def.labels.map((l) => l.slice(1, -1));
+  c.forEach((z, k) => {
+    const px = cx + R * z.re, py = cy - R * z.im;
+    const color = k === 0 ? stateColor : withAlpha(stateColor, 0.6);
+    ctx.strokeStyle = color; ctx.lineWidth = k === 0 ? 2.6 : 2.2;
+    ctx.setLineDash(k === 0 ? [] : [6, 4]);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+    ctx.setLineDash([]);
+    arrowHead(ctx, cx, cy, px, py, 8, color);
+    ctx.lineWidth = 2; ctx.strokeStyle = stateColor; ctx.fillStyle = k === 0 ? stateColor : "#fff";
+    ctx.beginPath(); ctx.arc(px, py, 4.5, 0, TAU); ctx.fill(); ctx.stroke();
+    // Ket label just beyond the tip
+    const m = cabs(z), ux = m > 1e-6 ? z.re / m : 1, uy = m > 1e-6 ? z.im / m : 0;
+    ctx.font = `700 ${fs}px -apple-system, Segoe UI, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = col;
+    ctx.fillText(tags[k], px + ux * 11, py - uy * 11);
+  });
+
+  const L = panel.spec.key === "Z" ? ["α", "β"] : panel.def.labels.map((k) => "⟨" + k.slice(1, -1) + "|");
+  const rel = cabs(c[0]) > 1e-9 && cabs(c[1]) > 1e-9 ? fmtDeg(mod(carg(c[1]) - carg(c[0]) + Math.PI, TAU) - Math.PI) : "—";
+  panel.info.innerHTML = `${L[0]} ${fmtC2(c[0])}<br>${L[1]} ${fmtC2(c[1])}<br>`
+    + `<span style="color:#e67700">∠${L[0]}</span> ${cabs(c[0]) > 1e-6 ? fmtDeg(carg(c[0])) : "—"}<br>Δφ ${rel}`;
+}
+
 function drawPanel(panel) {
+  if (panel.spec.kind === "amp") return drawAmpPanel(panel);
+  if (panel.spec.kind === "raw") return drawRawPanel(panel);
   const ctx = fitCanvas(panel.cv);
   const S = panel.cv._size, cx = S / 2, cy = S / 2, R = S * 0.36;
   const col = css(panel.def.color);
@@ -626,12 +764,7 @@ function drawPanel(panel) {
   ctx.strokeStyle = col; ctx.lineWidth = 1.6;
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill(); ctx.stroke();
 
-  // Axes with arrows
-  ctx.strokeStyle = "#495057"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(cx - 1.3 * R, cy); ctx.lineTo(cx + 1.3 * R, cy); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx, cy + 1.3 * R); ctx.lineTo(cx, cy - 1.3 * R); ctx.stroke();
-  arrowHead(ctx, cx, cy, cx + 1.33 * R, cy, 6, "#495057");
-  arrowHead(ctx, cx, cy, cx, cy - 1.33 * R, 6, "#495057");
+  drawAxes(ctx, cx, cy, R);
 
   // Axis labels
   const fs = Math.max(11, Math.min(13, S / 9));
@@ -717,6 +850,7 @@ function attachPanelDrag(panel) {
   const cv = panel.cv;
   cv.classList.add("drag");
   let sign = 1;     // sign of the hidden component, frozen at drag start
+  let grab = 0;     // raw panels: which coefficient (0 or 1) is being dragged
 
   const toPlane = (e) => {
     const r = cv.getBoundingClientRect();
@@ -724,16 +858,42 @@ function attachPanelDrag(panel) {
     return [(e.clientX - r.left - S / 2) / R, -(e.clientY - r.top - S / 2) / R];
   };
 
-  // psi is the dragged side's state; for "after" panels recover the input as U†|ψ⟩
-  const setState = (psi) => {
+  // psi is the dragged side's state; for "after" panels recover the input as U†|ψ⟩.
+  // Only the α / β planes show the global phase, so only they update γ.
+  const setState = (psi, setPhase = false) => {
     if (panel.which === "A") psi = applyU(dagger(derived.U), psi);
     const a = anglesFromState(psi, state.phi);
     state.theta = a.theta; state.phi = a.phi;
+    if (setPhase) state.gamma = mod(cabs(psi[0]) > 1e-9 ? carg(psi[0]) : carg(psi[1]) - a.phi, TAU);
   };
 
   const applyDrag = (e) => {
     let [u, v] = toPlane(e);
-    if (panel.spec.kind === "plane") {
+    if (panel.spec.kind === "amp") {
+      // Mouse sets this amplitude; the other keeps its phase and its modulus restores normalisation
+      const side = derived[panel.which], k = panel.spec.key, o = 1 - k;
+      const r = Math.hypot(u, v);
+      if (r >= 1 - SNAP) { u /= r; v /= r; }
+      const m = Math.min(1, r), other = side.psi[o];
+      // If the other amplitude was 0 its phase is undefined: keep the relative phase φ = arg β − arg α
+      const ph = cabs(other) > 1e-9 ? carg(other) : carg(C(u, v)) + (k === 0 ? side.phi : -side.phi);
+      const psi = [];
+      psi[k] = C(u, v);
+      psi[o] = cscale(cexpi(ph), Math.sqrt(Math.max(0, 1 - m * m)));
+      setState(psi, true);
+    } else if (panel.spec.kind === "raw") {
+      // Mouse sets the grabbed coefficient; the other keeps its phase and its modulus restores normalisation
+      const c = rawCoeffs(panel), k = grab, o = 1 - k;
+      const r = Math.hypot(u, v);
+      if (r >= 1 - SNAP) { u /= r; v /= r; }
+      const m = Math.min(1, r);
+      // If the other coefficient was 0 its phase is undefined: keep φ in the Z basis, otherwise use 0
+      const rel = panel.spec.key === "Z" ? derived[panel.which].phi : 0;
+      const ph = cabs(c[o]) > 1e-9 ? carg(c[o]) : carg(C(u, v)) + (k === 0 ? rel : -rel);
+      c[k] = C(u, v);
+      c[o] = cscale(cexpi(ph), Math.sqrt(Math.max(0, 1 - m * m)));
+      setState(stateFromBasisCoeffs(panel.def, c[0], c[1]), true);
+    } else if (panel.spec.kind === "plane") {
       // In-plane coordinates follow the mouse; the perpendicular component fills up to |r| = 1
       const pl = panel.def;
       const r = Math.hypot(u, v);
@@ -757,8 +917,13 @@ function attachPanelDrag(panel) {
   };
 
   cv.addEventListener("pointerdown", (e) => {
-    const d = panelData(panel);
-    sign = panel.spec.kind === "plane" ? (d.w < -1e-6 ? -1 : 1) : (d.c1.im < -1e-6 ? -1 : 1);
+    if (panel.spec.kind === "raw") {
+      // Grab whichever arrow tip is closer to the pointer
+      const [u, v] = toPlane(e), c = rawCoeffs(panel);
+      grab = Math.hypot(u - c[1].re, v - c[1].im) < Math.hypot(u - c[0].re, v - c[0].im) ? 1 : 0;
+    }
+    const d = panel.spec.kind === "raw" || panel.spec.kind === "amp" ? {} : panelData(panel);
+    sign = panel.spec.kind === "raw" || panel.spec.kind === "amp" ? 1 : panel.spec.kind === "plane" ? (d.w < -1e-6 ? -1 : 1) : (d.c1.im < -1e-6 ? -1 : 1);
     cv.setPointerCapture(e.pointerId);
     applyDrag(e);
   });
@@ -790,8 +955,9 @@ function renderReadouts() {
     `<div class="hd">Input: |ψ⟩</div>`
     + `<span class="big">θ = ${fmtDeg(b.theta)}</span> (${fmt(b.theta)} rad)<br>`
     + `<span class="big">φ = ${fmtDeg(b.phi)}</span> (${fmt(b.phi)} rad)<br>`
-    + `<span class="hint">|ψ⟩ = cos(θ/2)|0⟩ + e<sup>iφ</sup>sin(θ/2)|1⟩</span><br>`
-    + `|ψ⟩ = ${fmtC(b.psi[0])} |0⟩<br>${pad}+ (${fmtC(b.psi[1])}) |1⟩<br>`
+    + `γ = ${fmtDeg(state.gamma)} <span class="hint">(global phase)</span><br>`
+    + `<span class="hint">|ψ⟩ = e<sup>iγ</sup>[cos(θ/2)|0⟩ + e<sup>iφ</sup>sin(θ/2)|1⟩]</span><br>`
+    + `|ψ⟩ = (${fmtC(b.psi[0])}) |0⟩<br>${pad}+ (${fmtC(b.psi[1])}) |1⟩<br>`
     + `r = ${fmtVec(b.v)}`;
   const psiN = stateFromAngles(a.theta, a.phi);
   $("roA").innerHTML =
@@ -829,7 +995,7 @@ function buildControls() {
   for (const [lab, t, p] of PRESETS) {
     const b = document.createElement("button");
     b.textContent = lab;
-    b.onclick = () => { state.theta = t * DEG; state.phi = p * DEG; scheduleRender(); };
+    b.onclick = () => { state.theta = t * DEG; state.phi = p * DEG; state.gamma = 0; scheduleRender(); };
     pre.appendChild(b);
   }
   const gb = $("gateBtns");
