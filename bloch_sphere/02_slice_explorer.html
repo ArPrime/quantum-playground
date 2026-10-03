@@ -63,15 +63,10 @@
   .mat td { padding: 1px 7px; text-align: center; white-space: nowrap; font-family: var(--mono); font-size: 14px; }
   .mat-name { font-weight: 600; white-space: nowrap; font-size: 15px; }
 
-  /* ---------- Row 2: 2D plots (before / after) ---------- */
-  .planes { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; }
-  .rowlab {
-    writing-mode: vertical-rl; transform: rotate(180deg); text-align: center;
-    font-size: 13px; font-weight: 700; letter-spacing: .08em; border-radius: 4px; color: #fff;
-  }
-  .rowlab.before { background: var(--before); }
-  .rowlab.after { background: var(--after); }
-  .prow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  /* ---------- Row 2: one block per side (input left, output right): 2D plots + 3D sphere ---------- */
+  .sides { display: flex; flex-wrap: wrap; gap: 8px; }
+  .side { flex: 1 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .prow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 4px 5px; min-width: 0; }
   .panel .title { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pbody { display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; }
@@ -82,9 +77,8 @@
   .tag.solid { background: #d3f9d8; color: #2b8a3e; }
   .tag.proj { background: #fff3bf; color: #a35f00; }
 
-  /* ---------- Row 3: 3D spheres + read-outs ---------- */
-  .spheres { display: flex; flex-wrap: wrap; gap: 8px; }
-  .sph { flex: 1 1 480px; display: flex; gap: 10px; align-items: center; min-width: 0; }
+  /* ---------- 3D sphere + read-out (inside each side block) ---------- */
+  .sph { display: flex; gap: 10px; align-items: center; min-width: 0; }
   canvas.sphere { width: 236px; height: 236px; flex: none; display: block; cursor: grab; touch-action: none; }
   canvas.sphere:active { cursor: grabbing; }
   .readout { flex: 1; min-width: 0; font-family: var(--mono); font-size: 15px; line-height: 1.42; white-space: nowrap; overflow-x: auto; }
@@ -94,7 +88,6 @@
   .after .hd { color: var(--after); }
 
   @media (max-width: 1250px) { .panel .info { font-size: 11.5px; flex-basis: 84px; } .readout { font-size: 13px; } .panel canvas { width: clamp(72px, calc(100% - 86px), 116px); } }
-  @media (max-width: 900px) { .prow { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 </style>
 </head>
 <body>
@@ -134,21 +127,20 @@
     </div>
   </section>
 
-  <section class="planes card">
-    <div class="rowlab before">BEFORE</div>
-    <div class="prow" id="gridB"></div>
-    <div class="rowlab after">AFTER</div>
-    <div class="prow" id="gridA"></div>
-  </section>
-
-  <section class="spheres">
-    <div class="sph card before">
-      <canvas class="sphere" id="sphB"></canvas>
-      <div class="readout" id="roB"></div>
+  <section class="sides">
+    <div class="side card before">
+      <div class="prow" id="gridB"></div>
+      <div class="sph">
+        <canvas class="sphere" id="sphB"></canvas>
+        <div class="readout" id="roB"></div>
+      </div>
     </div>
-    <div class="sph card after">
-      <canvas class="sphere" id="sphA"></canvas>
-      <div class="readout" id="roA"></div>
+    <div class="side card after">
+      <div class="prow" id="gridA"></div>
+      <div class="sph">
+        <canvas class="sphere" id="sphA"></canvas>
+        <div class="readout" id="roA"></div>
+      </div>
     </div>
   </section>
 </div>
@@ -583,8 +575,8 @@ function drawSphere(cv, view, which) {
    ===================================================================== */
 const panels = { B: [], A: [] };
 const PANEL_SPECS = [
-  { kind: "plane", key: "xz" }, { kind: "plane", key: "xy" }, { kind: "plane", key: "yz" },
   { kind: "basis", key: "Z" }, { kind: "basis", key: "X" }, { kind: "basis", key: "Y" },
+  { kind: "plane", key: "xy" }, { kind: "plane", key: "yz" }, { kind: "plane", key: "xz" },
 ];
 const SNAP = 0.04;      // drag snapping tolerance onto the unit circle
 
@@ -629,13 +621,6 @@ function drawPanel(panel) {
     ctx.fillRect(0, 0, cx, S);
   }
 
-  // Light grid
-  ctx.strokeStyle = "#e9ecef"; ctx.lineWidth = 1;
-  for (const g of [-1, -0.5, 0.5, 1]) {
-    ctx.beginPath(); ctx.moveTo(cx + g * R, cy - 1.25 * R); ctx.lineTo(cx + g * R, cy + 1.25 * R); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx - 1.25 * R, cy - g * R); ctx.lineTo(cx + 1.25 * R, cy - g * R); ctx.stroke();
-  }
-
   // Unit circle
   ctx.fillStyle = withAlpha(col, 0.06);
   ctx.strokeStyle = col; ctx.lineWidth = 1.6;
@@ -659,6 +644,8 @@ function drawPanel(panel) {
   ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(vl[0], cx + 5, 2);
   ctx.textBaseline = "bottom"; ctx.fillText(vl[1], cx + 5, S - 2);
 
+  if (!isBasis) drawAngleArcs(ctx, panel, d, cx, cy, R, fs);
+
   // State (solid if exactly representable in this 2D picture, otherwise dashed projection)
   const px = cx + R * d.u, py = cy - R * d.v;
   ctx.strokeStyle = withAlpha(stateColor, 0.45); ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
@@ -679,6 +666,31 @@ function drawPanel(panel) {
   panel.info.innerHTML = panelInfo(panel, d);
 }
 
+// θ / φ arcs in a section plot (same colours as on the 3D spheres).
+// x–y: φ measured from +x. x–z, y–z: θ measured from +z, towards the side the state lies on.
+// Dashed when the state is not in this plane, since the arc then shows the true angle, not the projected one.
+function drawAngleArcs(ctx, panel, d, cx, cy, R, fs) {
+  const side = derived[panel.which];
+  const r = R * 0.4, rl = r + fs * 0.75;
+  let a0, a1, label, stroke, fill;
+  if (panel.def.p === 2) {
+    if (side.atPole) return;                                  // φ undefined at the poles
+    a0 = 0; a1 = -side.phi; label = "φ"; stroke = "#1098ad"; fill = "#0b7285";
+  } else {
+    const s = d.u < -1e-9 ? -1 : 1;
+    a0 = -Math.PI / 2; a1 = a0 + s * side.theta; label = "θ"; stroke = "#f59f00"; fill = "#e67700";
+  }
+  ctx.save();
+  ctx.strokeStyle = stroke; ctx.lineWidth = 1.6;
+  ctx.setLineDash(d.solid ? [] : [3, 2]);
+  ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1, a1 < a0); ctx.stroke();
+  const am = (a0 + a1) / 2;
+  ctx.font = `italic 700 ${fs + 1}px Georgia, serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = fill;
+  ctx.fillText(label, cx + rl * Math.cos(am), cy + rl * Math.sin(am));
+  ctx.restore();
+}
+
 // Complex number split over two short lines so it fits the narrow side column
 function fmtC2(z) {
   const re = fmt(z.re), im = Math.abs(z.im) < 5e-4 ? 0 : z.im;
@@ -687,10 +699,11 @@ function fmtC2(z) {
 
 function panelInfo(panel, d) {
   if (panel.spec.kind === "plane") {
-    const pl = panel.def;
+    const pl = panel.def, side = derived[panel.which];
     const tag = d.solid ? `<span class="tag solid">in plane</span>` : `<span class="tag proj">projection</span>`;
     return `${AXIS_NAMES[pl.h]}&nbsp; ${fmt(d.u)}<br>${AXIS_NAMES[pl.v]}&nbsp; ${fmt(d.v)}<br>`
-         + `⊥${pl.pName} ${fmt(d.w)}<br>${tag}`;
+         + `⊥${pl.pName} ${fmt(d.w)}<br>`
+         + `θ&nbsp; ${fmtDeg(side.theta)}<br>φ&nbsp; ${side.atPole ? "—" : fmtDeg(side.phi)}<br>${tag}`;
   }
   const L = panel.def.labels.map((k) => "⟨" + k.slice(1, -1) + "|");
   const rel = cabs(d.c1) > 1e-9 && cabs(d.c0) > 1e-9 ? fmtDeg(carg(d.c1), 1) : "—";
@@ -774,7 +787,7 @@ function renderReadouts() {
   const D = derived, b = D.B, a = D.A;
   const pad = "&nbsp;".repeat(7);
   $("roB").innerHTML =
-    `<div class="hd">Before: |ψ⟩</div>`
+    `<div class="hd">Input: |ψ⟩</div>`
     + `<span class="big">θ = ${fmtDeg(b.theta)}</span> (${fmt(b.theta)} rad)<br>`
     + `<span class="big">φ = ${fmtDeg(b.phi)}</span> (${fmt(b.phi)} rad)<br>`
     + `<span class="hint">|ψ⟩ = cos(θ/2)|0⟩ + e<sup>iφ</sup>sin(θ/2)|1⟩</span><br>`
@@ -782,7 +795,7 @@ function renderReadouts() {
     + `r = ${fmtVec(b.v)}`;
   const psiN = stateFromAngles(a.theta, a.phi);
   $("roA").innerHTML =
-    `<div class="hd">After: U|ψ⟩</div>`
+    `<div class="hd">Output: U|ψ⟩</div>`
     + `<span class="big">θ' = ${fmtDeg(a.theta)}</span> (${fmt(a.theta)} rad)<br>`
     + `<span class="big">φ' = ${a.atPole ? "undefined" : fmtDeg(a.phi)}</span> ${a.atPole ? "(pole)" : `(${fmt(a.phi)} rad)`}<br>`
     + `U|ψ⟩ = (${fmtC(a.psi[0])}) |0⟩<br>${pad}+ (${fmtC(a.psi[1])}) |1⟩<br>`
