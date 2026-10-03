@@ -137,7 +137,7 @@
   </section>
 
   <section class="planes card">
-    <div class="rowlab before">BEFORE · DRAG</div>
+    <div class="rowlab before">BEFORE</div>
     <div class="prow" id="gridB"></div>
     <div class="rowlab after">AFTER</div>
     <div class="prow" id="gridA"></div>
@@ -232,6 +232,9 @@ function applyU(U, psi) {
     cadd(cmul(U[1][0], psi[0]), cmul(U[1][1], psi[1])),
   ];
 }
+
+// U†: conjugate transpose of a 2×2 complex matrix
+const dagger = (U) => [[cconj(U[0][0]), cconj(U[1][0])], [cconj(U[0][1]), cconj(U[1][1])]];
 
 // Rodrigues rotation of a 3D vector v around unit axis n by angle a
 function rotate(v, n, a) {
@@ -576,14 +579,6 @@ function drawSphere(cv, view, which) {
   ctx.fillStyle = stateColor;
   ctx.beginPath(); ctx.arc(T.x, T.y, 4, 0, TAU); ctx.fill();
   ctx.fillStyle = "#212529"; ctx.beginPath(); ctx.arc(O.x, O.y, 2.5, 0, TAU); ctx.fill();
-
-  // Corner caption with θ and φ
-  ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.font = "600 15px -apple-system, Segoe UI, sans-serif";
-  ctx.fillStyle = stateColor;
-  const tName = which === "B" ? "θ" : "θ'", pName = which === "B" ? "φ" : "φ'";
-  ctx.fillText(`${tName} = ${fmtDeg(th)}`, 2, 2);
-  ctx.fillText(`${pName} = ${side.atPole ? "undefined" : fmtDeg(ph)}`, 2, 20);
 }
 
 /* =====================================================================
@@ -707,7 +702,7 @@ function panelInfo(panel, d) {
        + `P ${fmt(cabs(d.c0) ** 2, 2)}|${fmt(cabs(d.c1) ** 2, 2)}<br>Δφ ${rel}<br>${tag}`;
 }
 
-/* ---------- Dragging the state inside a "before" panel ---------- */
+/* ---------- Dragging the state inside a panel ("after" drags are mapped back through U†) ---------- */
 function attachPanelDrag(panel) {
   const cv = panel.cv;
   cv.classList.add("drag");
@@ -717,6 +712,13 @@ function attachPanelDrag(panel) {
     const r = cv.getBoundingClientRect();
     const S = cv._size, R = S * 0.36;
     return [(e.clientX - r.left - S / 2) / R, -(e.clientY - r.top - S / 2) / R];
+  };
+
+  // psi is the dragged side's state; for "after" panels recover the input as U†|ψ⟩
+  const setState = (psi) => {
+    if (panel.which === "A") psi = applyU(dagger(derived.U), psi);
+    const a = anglesFromState(psi, state.phi);
+    state.theta = a.theta; state.phi = a.phi;
   };
 
   const applyDrag = (e) => {
@@ -730,8 +732,8 @@ function attachPanelDrag(panel) {
       else w = sign * Math.sqrt(1 - r * r);
       const vec = [0, 0, 0];
       vec[pl.h] = u; vec[pl.v] = v; vec[pl.p] = w;
-      const a = anglesFromBloch(vec, state.phi);
-      state.theta = a.theta; state.phi = a.phi;
+      const a = anglesFromBloch(vec, derived[panel.which].phi);
+      setState(stateFromAngles(a.theta, a.phi));
     } else {
       // Mouse gives (c0, Re c1); the imaginary part of c1 restores normalisation
       u = Math.max(0, u);
@@ -739,9 +741,7 @@ function attachPanelDrag(panel) {
       let im = 0;
       if (r >= 1 - SNAP || r === 0) { const s = r || 1; u /= s; v /= s; if (r === 0) u = 1; }
       else im = sign * Math.sqrt(1 - r * r);
-      const psi = stateFromBasisCoeffs(panel.def, C(u), C(v, im));
-      const a = anglesFromState(psi, state.phi);
-      state.theta = a.theta; state.phi = a.phi;
+      setState(stateFromBasisCoeffs(panel.def, C(u), C(v, im)));
     }
     scheduleRender();
   };
@@ -782,8 +782,7 @@ function renderReadouts() {
     + `<span class="big">φ = ${fmtDeg(b.phi)}</span> (${fmt(b.phi)} rad)<br>`
     + `<span class="hint">|ψ⟩ = cos(θ/2)|0⟩ + e<sup>iφ</sup>sin(θ/2)|1⟩</span><br>`
     + `|ψ⟩ = ${fmtC(b.psi[0])} |0⟩<br>${pad}+ (${fmtC(b.psi[1])}) |1⟩<br>`
-    + `r = ${fmtVec(b.v)}<br>`
-    + `P(0) = ${fmt(cabs(b.psi[0]) ** 2)}&nbsp; P(1) = ${fmt(cabs(b.psi[1]) ** 2)}`;
+    + `r = ${fmtVec(b.v)}`;
   const psiN = stateFromAngles(a.theta, a.phi);
   $("roA").innerHTML =
     `<div class="hd">After: U|ψ⟩</div>`
@@ -791,8 +790,7 @@ function renderReadouts() {
     + `<span class="big">φ' = ${a.atPole ? "undefined" : fmtDeg(a.phi)}</span> ${a.atPole ? "(pole)" : `(${fmt(a.phi)} rad)`}<br>`
     + `U|ψ⟩ = (${fmtC(a.psi[0])}) |0⟩<br>${pad}+ (${fmtC(a.psi[1])}) |1⟩<br>`
     + `${pad}= e<sup>i·${fmtDeg(D.gp)}</sup> [ ${fmtC(psiN[0])} |0⟩<br>${pad}&nbsp;&nbsp;+ (${fmtC(psiN[1])}) |1⟩ ]<br>`
-    + `r' = ${fmtVec(a.v)}<br>`
-    + `P(0) = ${fmt(cabs(a.psi[0]) ** 2)}&nbsp; P(1) = ${fmt(cabs(a.psi[1]) ** 2)}`;
+    + `r' = ${fmtVec(a.v)}`;
 }
 
 /* =====================================================================
@@ -913,7 +911,7 @@ function fitFrame() {
 
 buildControls();
 buildPanels("B", true);
-buildPanels("A", false);
+buildPanels("A", true);
 window.addEventListener("resize", scheduleRender);
 render();
 </script>
