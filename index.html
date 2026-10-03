@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantum Playground</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --card: #f7f8fa;
+    --border: #dde1e7;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --accent: #3b5bdb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161b;
+      --card: #1c1f26;
+      --border: #2e333d;
+      --text: #e6e8ec;
+      --muted: #9aa1ad;
+      --accent: #748ffc;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 48px 16px; }
+  h1 { margin: 0 0 4px; font-size: 1.8rem; }
+  h2 { margin: 32px 0 12px; font-size: 1.1rem; color: var(--muted); font-weight: 600; }
+  p.sub { margin: 0; color: var(--muted); }
+  ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  a.card {
+    display: block;
+    padding: 16px 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .15s;
+  }
+  a.card:hover { border-color: var(--accent); }
+  .title { font-weight: 600; color: var(--accent); }
+  .tag { font-size: .8rem; color: var(--muted); margin-left: 6px; }
+  .desc { color: var(--muted); font-size: .95rem; }
+  footer { margin-top: 40px; font-size: .9rem; color: var(--muted); }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Quantum Playground</h1>
+  <p class="sub">Interactive demos and notebooks for quantum computing basics.</p>
+
+  <h2>Bloch Sphere</h2>
+  <ul>
+    <li>
+      <a class="card" href="bloch_sphere/02_slice_explorer.html">
+        <span class="title">Slice Explorer</span><span class="tag">interactive</span>
+        <div class="desc">Bloch sphere visualizer with 2D slice views.</div>
+      </a>
+    </li>
+    <li>
+      <a class="card" href="https://github.com/ArPrime/quantum-playground/blob/main/bloch_sphere/01_hadamard_demo.ipynb">
+        <span class="title">Hadamard Demo</span><span class="tag">notebook</span>
+        <div class="desc">How the Hadamard gate moves a qubit on the Bloch sphere.</div>
+      </a>
+    </li>
+    <li>
+      <a class="card" href="https://github.com/ArPrime/quantum-playground/blob/main/bloch_sphere/02_slice_explorer.ipynb">
+        <span class="title">Slice Explorer</span><span class="tag">notebook</span>
+        <div class="desc">Notebook source for the slice explorer.</div>
+      </a>
+    </li>
+  </ul>
+
+  <footer><a href="https://github.com/ArPrime/quantum-playground">View on GitHub</a></footer>
+</main>
+</body>
+</html>
