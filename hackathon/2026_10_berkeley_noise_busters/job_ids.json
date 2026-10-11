@@ -1,0 +1,9 @@
+{
+  "backend": "ibm_fez",
+  "baseline": "db5b02clf4us73c3pu4g",
+  "noise_learning": "db5b02g4qg6s73c37oq0",
+  "executor_fwd": "db5cg0cvf2bc73cvn940",
+  "executor_mirror": "db5cg0kvf2bc73cvn970",
+  "estimator_zne": "db5cgao4qg6s73c39h30",
+  "executor_fwd_2": "db5cpucvf2bc73cvnjk0"
+}
